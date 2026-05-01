@@ -1,0 +1,647 @@
+import { useState, useEffect } from "react";
+
+// ─── DONNÉES ────────────────────────────────────────────────────────────────
+const SEASONS = {
+  printemps: { emoji: "🌸", months: [3,4,5] },
+  été:       { emoji: "☀️", months: [6,7,8] },
+  automne:   { emoji: "🍂", months: [9,10,11] },
+  hiver:     { emoji: "❄️", months: [12,1,2] },
+};
+const getCurrentSeason = () => {
+  const m = new Date().getMonth() + 1;
+  return Object.entries(SEASONS).find(([,v]) => v.months.includes(m))?.[0] || "printemps";
+};
+const MOON_PHASES = ["🌑 Nouvelle Lune","🌒 Premier Croissant","🌓 Premier Quartier","🌔 Gibbeuse Croissante","🌕 Pleine Lune","🌖 Gibbeuse Décroissante","🌗 Dernier Quartier","🌘 Dernier Croissant"];
+
+const PLANT_PRESETS = [
+  { name:"Tomate",     emoji:"🍅", type:"potager",   watering:2, light:"Plein soleil",      npk:"5-10-10", seeds:"Août-Sept", lunar:"🌕 Fruit",  latinName:"Solanum lycopersicum", variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Basilic",   emoji:"🌿", type:"aromatique", watering:3, light:"Soleil",            npk:"3-3-3",   seeds:"Avant floraison", lunar:"🌒 Feuille", latinName:"Ocimum basilicum",     variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Rose",      emoji:"🌹", type:"ornement",   watering:2, light:"Plein soleil",      npk:"6-12-6",  seeds:"N/A – bouture",   lunar:"🌓 Fleur",  latinName:"Rosa",                 variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Lavande",   emoji:"💜", type:"aromatique", watering:1, light:"Plein soleil",      npk:"2-4-4",   seeds:"Printemps",       lunar:"🌒 Feuille", latinName:"Lavandula angustifolia", variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Laitue",    emoji:"🥬", type:"potager",    watering:3, light:"Mi-ombre",          npk:"8-4-4",   seeds:"Couper feuilles", lunar:"🌔 Feuille", latinName:"Lactuca sativa",        variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Courgette", emoji:"🥒", type:"potager",    watering:3, light:"Plein soleil",      npk:"5-8-10",  seeds:"Juillet",         lunar:"🌕 Fruit",  latinName:"Cucurbita pepo",        variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Ficus",     emoji:"🌴", type:"intérieur",  watering:1, light:"Lumière indirecte", npk:"3-1-2",   seeds:"N/A",             lunar:"🌔 Feuille", latinName:"Ficus benjamina",       variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Orchidée",  emoji:"🌸", type:"intérieur",  watering:1, light:"Lumière filtrée",   npk:"20-20-20",seeds:"N/A",             lunar:"🌓 Fleur",  latinName:"Phalaenopsis",          variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Fraisier",  emoji:"🍓", type:"fruitier",   watering:2, light:"Plein soleil",      npk:"5-8-10",  seeds:"Stolons – automne", lunar:"🌕 Fruit", latinName:"Fragaria × ananassa",  variety:"", plantedDate:"", location:"", notes:"" },
+  { name:"Tulipe",    emoji:"🌷", type:"bulbe",      watering:1, light:"Soleil",            npk:"3-8-8",   seeds:"Bulbes – oct-nov", lunar:"🌓 Fleur",  latinName:"Tulipa",               variety:"", plantedDate:"", location:"", notes:"" },
+];
+
+const MODULES = ["Mes Plantes","Récolte","Potager","Maladies","Engrais NPK","Graines","Lunaire"];
+const MODULE_ICONS = ["🌱","🧺","🥕","🔬","⚗️","🫘","🌕"];
+
+const NATURAL_TREATMENTS = {
+  "Mildiou":              { cause:"Champignon – humidité excessive",  treatment:"Bouillie bordelaise, bicarbonate + savon noir", prevention:"Aérer, arroser à la base" },
+  "Oïdium":               { cause:"Champignon – air chaud et sec",    treatment:"Soufre, lait dilué 1:9, bicarbonate",          prevention:"Espacement des plants, bon soleil" },
+  "Botrytis":             { cause:"Botrytis cinerea",                  treatment:"Supprimer parties atteintes, purée de prêle",  prevention:"Réduire humidité, bonne circulation" },
+  "Cochenilles":          { cause:"Insecte suceur",                    treatment:"Alcool 70° + coton, savon noir, huile neem",   prevention:"Inspecter régulièrement" },
+  "Phytophthora":         { cause:"Oomycète – sol trop humide",        treatment:"Améliorer drainage, ail fermenté",             prevention:"Sol drainé, arrosage modéré" },
+  "Tache noire":          { cause:"Diplocarpon rosae",                 treatment:"Bouillie bordelaise, décoction d'ortie",       prevention:"Ne pas mouiller les feuilles" },
+  "Pourriture des racines":{ cause:"Arrosage excessif",               treatment:"Rempoter, couper racines noires",              prevention:"Substrat drainant, arrosage modéré" },
+  "Pythium":              { cause:"Oomycète de sol",                   treatment:"Réduire arrosages, purin d'ail",               prevention:"Substrat stérile, drainage parfait" },
+};
+const LUNAR_GUIDE = [
+  { day:"Racine", icon:"🪱", desc:"Tailler, récolter tubercules. Éviter plantation.", color:"#8B5E3C" },
+  { day:"Feuille",icon:"🍃", desc:"Semer, repiquer légumes-feuilles. Arroser.",       color:"#2D6A4F" },
+  { day:"Fleur",  icon:"🌸", desc:"Semer fleurs, tailler rosiers. Cueillir.",          color:"#D4838F" },
+  { day:"Fruit",  icon:"🍓", desc:"Semer et récolter fruits. Conserver semences.",     color:"#C9473B" },
+];
+const NPK_ADVICE = [
+  { ratio:"Azote (N) élevé",     plants:"Gazon, feuillus, légumes-feuilles",       natural:"Purin d'ortie, compost vert, marc de café", color:"#2D6A4F" },
+  { ratio:"Phosphore (P) élevé", plants:"Bulbes, jeunes plants, floraison",         natural:"Cendres de bois, poudre d'os, guano",       color:"#6B3FA0" },
+  { ratio:"Potassium (K) élevé", plants:"Fruits, légumes-fruits, résistance",       natural:"Cendres de bois, algues, banane séchée",    color:"#C9473B" },
+];
+
+// ─── STYLES COMMUNS ─────────────────────────────────────────────────────────
+const inp = { width:"100%", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", borderRadius:8, padding:"9px 12px", color:"#fff", fontSize:14, outline:"none", boxSizing:"border-box", fontFamily:"inherit" };
+const lbl = { color:"#a8c5a0", fontSize:12, marginBottom:4, display:"block" };
+const card = { background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:16, padding:18, marginBottom:14 };
+
+// ─── PHOTOS VIA UNSPLASH ────────────────────────────────────────────────────
+const UNSPLASH_QUERIES = {
+  "Tomate":     ["tomato plant","tomato flower","tomato red fruit","tomato garden"],
+  "Basilic":    ["basil plant","basil leaves","basil herb garden","basil flower"],
+  "Rose":       ["rose flower","rose garden","rose bud","rose leaves"],
+  "Lavande":    ["lavender plant","lavender flowers","lavender field","lavender close"],
+  "Laitue":     ["lettuce garden","lettuce leaves","lettuce harvest","salad plant"],
+  "Courgette":  ["zucchini plant","courgette flower","zucchini vegetable","courgette garden"],
+  "Ficus":      ["ficus plant","ficus leaves","ficus tree indoor","ficus benjamina"],
+  "Orchidée":   ["orchid flower","orchid plant","orchid white","orchid purple"],
+  "Fraisier":   ["strawberry plant","strawberry flower","strawberry fruit","strawberry garden"],
+  "Tulipe":     ["tulip flower","tulip garden","tulip bulb","tulip close up"],
+};
+const PHOTO_LABELS = ["🌿 Vue générale","🍃 Feuilles","🌸 Fleurs / Floraison","🍓 Fruits / Récolte"];
+
+function PlantPhotos({ plant }) {
+  const queries = UNSPLASH_QUERIES[plant.name] || [plant.name+" plant", plant.name+" leaves", plant.name+" flower", plant.name+" harvest"];
+  const photos = queries.map((q, i) =>
+    `https://source.unsplash.com/400x300/?${encodeURIComponent(q)}&sig=${plant.name}${i}`
+  );
+  const [active, setActive] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+
+  return (
+    <div style={{ marginBottom:16 }}>
+      {/* Grande photo */}
+      <div style={{ position:"relative", borderRadius:16, overflow:"hidden", marginBottom:10, background:"rgba(0,0,0,0.3)", height:200 }}>
+        {!loaded && (
+          <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", color:"#a8c5a0", fontSize:13 }}>
+            📷 Chargement…
+          </div>
+        )}
+        <img
+          key={photos[active]}
+          src={photos[active]}
+          alt={PHOTO_LABELS[active]}
+          onLoad={() => setLoaded(true)}
+          onError={e => { e.target.style.display="none"; }}
+          style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", transition:"opacity 0.3s", opacity: loaded ? 1 : 0 }}
+        />
+        <div style={{ position:"absolute", bottom:0, left:0, right:0, background:"linear-gradient(transparent,rgba(0,0,0,0.7))", padding:"20px 14px 10px", color:"#fff", fontSize:13, fontWeight:700 }}>
+          {PHOTO_LABELS[active]}
+        </div>
+      </div>
+      {/* Miniatures */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+        {photos.map((p,i) => (
+          <div key={i} onClick={() => { setActive(i); setLoaded(false); }}
+            style={{ borderRadius:10, overflow:"hidden", cursor:"pointer", border: active===i ? "2px solid #2D6A4F" : "2px solid transparent", height:56 }}>
+            <img src={p} alt={PHOTO_LABELS[i]} style={{ width:"100%", height:"100%", objectFit:"cover" }}
+              onError={e => e.target.style.display="none"} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6, marginTop:4 }}>
+        {PHOTO_LABELS.map((l,i) => (
+          <div key={i} onClick={() => { setActive(i); setLoaded(false); }}
+            style={{ fontSize:9, color: active===i ? "#a8d8a8" : "#6b9a7a", textAlign:"center", cursor:"pointer", lineHeight:1.3 }}>{l}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── FICHE IA ────────────────────────────────────────────────────────────────
+function AISheet({ plant, season, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [content, setContent] = useState("");
+  const [tab, setTab] = useState("fiche");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setContent("");
+    const extra = [
+      plant.latinName && `Nom latin : ${plant.latinName}`,
+      plant.variety   && `Variété : ${plant.variety}`,
+      plant.plantedDate && `Plantée le : ${plant.plantedDate}`,
+      plant.location  && `Emplacement : ${plant.location}`,
+      plant.notes     && `Notes : ${plant.notes}`,
+    ].filter(Boolean).join("\n");
+    const prompt = `Tu es un expert jardinier bienveillant. Génère une fiche de soins pour : ${plant.name} (${plant.emoji}).\n${extra ? `Infos du jardinier :\n${extra}\n` : ""}Saison : ${season}.\nSections :\n1. 🌿 Description (3 phrases)\n2. 💧 Arrosage – saison ${season}\n3. 🌞 Lumière\n4. 🪴 Sol & Rempotage\n5. ✂️ Taille – ${season}\n6. 🚨 Maladies fréquentes\n7. 💡 Conseil personnalisé (adapté aux infos du jardinier si disponibles)\nMax 280 mots, français, concret et chaleureux.`;
+    (async () => {
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000, messages:[{role:"user",content:prompt}] }) });
+        const data = await res.json();
+        if (!cancelled) { setContent(data.content?.[0]?.text || "Erreur."); setLoading(false); }
+      } catch { if (!cancelled) { setContent("Erreur réseau."); setLoading(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [plant.name, season]);
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(10,20,15,0.96)", zIndex:1000, display:"flex", alignItems:"flex-start", justifyContent:"center", padding:12, backdropFilter:"blur(12px)", overflowY:"auto" }}>
+      <div style={{ background:"linear-gradient(145deg,#1a2e1e,#0f1f14)", border:"1px solid rgba(168,197,160,0.25)", borderRadius:24, padding:22, maxWidth:540, width:"100%", marginTop:8 }}>
+        {/* Header */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
+          <div>
+            <span style={{ fontSize:34 }}>{plant.emoji}</span>
+            <h2 style={{ fontFamily:"'Playfair Display',serif", color:"#f0ece0", margin:"3px 0 2px", fontSize:19 }}>{plant.name}</h2>
+            {plant.latinName && <div style={{ color:"#6b9a7a", fontSize:12, fontStyle:"italic" }}>{plant.latinName}</div>}
+            {plant.variety && <div style={{ color:"#a8c5a0", fontSize:12 }}>Variété : {plant.variety}</div>}
+          </div>
+          <button onClick={onClose} style={{ background:"rgba(255,255,255,0.1)", border:"none", borderRadius:"50%", width:36, height:36, color:"#fff", cursor:"pointer", fontSize:16, flexShrink:0 }}>✕</button>
+        </div>
+        {/* Badges */}
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
+          {plant.plantedDate && <span style={{ background:"rgba(255,200,0,0.15)", color:"#ffd700", borderRadius:20, padding:"3px 10px", fontSize:11 }}>📅 {plant.plantedDate}</span>}
+          {plant.location    && <span style={{ background:"rgba(45,106,79,0.3)", color:"#a8d8a8", borderRadius:20, padding:"3px 10px", fontSize:11 }}>📍 {plant.location}</span>}
+        </div>
+        {/* Onglets */}
+        <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+          {[["fiche","📋 Fiche soins"],["photos","📸 Photos"]].map(([k,l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ flex:1, padding:"8px", borderRadius:10, border:"none", cursor:"pointer", fontSize:13, fontWeight: tab===k ? 700 : 400, background: tab===k ? "#2D6A4F" : "rgba(255,255,255,0.07)", color: tab===k ? "#fff" : "#a8c5a0" }}>{l}</button>
+          ))}
+        </div>
+        {/* Notes perso */}
+        {plant.notes && (
+          <div style={{ background:"rgba(255,255,255,0.05)", borderRadius:10, padding:"10px 14px", marginBottom:14, borderLeft:"3px solid #a8c5a0" }}>
+            <div style={{ color:"#a8c5a0", fontSize:11, marginBottom:4 }}>📝 MES NOTES</div>
+            <div style={{ color:"#d4e8cc", fontSize:13, lineHeight:1.6 }}>{plant.notes}</div>
+          </div>
+        )}
+        {/* Contenu onglet */}
+        {tab === "photos" && <PlantPhotos plant={plant} />}
+        {tab === "fiche" && (
+          loading
+            ? <div style={{ textAlign:"center", padding:40, color:"#a8c5a0" }}>
+                <div style={{ fontSize:32, display:"inline-block", animation:"spin 2s linear infinite" }}>🌱</div>
+                <div style={{ marginTop:12 }}>Génération de ta fiche…</div>
+                <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
+              </div>
+            : <div style={{ color:"#d4e8cc", lineHeight:1.8, fontSize:14, whiteSpace:"pre-wrap" }}>{content}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── RAPPELS IA ──────────────────────────────────────────────────────────────
+function AIReminders({ plant, season }) {
+  const [loading, setLoading] = useState(true);
+  const [reminders, setReminders] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const ctx = [plant.variety&&`variété ${plant.variety}`, plant.plantedDate&&`plantée le ${plant.plantedDate}`, plant.location&&`emplacement ${plant.location}`].filter(Boolean).join(", ");
+        const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:500, messages:[{role:"user",content:`Pour la plante ${plant.name}${ctx?` (${ctx})`:""}  saison ${season}, génère 4 rappels importants. JSON uniquement sans markdown: [{"action":"texte","urgence":"haute|moyenne|basse","emoji":"🌿"},...]`}] }) });
+        const data = await res.json();
+        const parsed = JSON.parse((data.content?.[0]?.text||"[]").replace(/```json|```/g,"").trim());
+        if (!cancelled) { setReminders(parsed); setLoading(false); }
+      } catch { if (!cancelled) { setReminders([{action:"Vérifier l'arrosage",urgence:"moyenne",emoji:"💧"}]); setLoading(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [plant.name, season]);
+  const col = { haute:"#ff6b6b", moyenne:"#ffd700", basse:"#a8d8a8" };
+  if (loading) return <div style={{ color:"#a8c5a0", fontSize:12, padding:8 }}>Génération des rappels…</div>;
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+      {reminders.map((r,i) => (
+        <div key={i} style={{ display:"flex", alignItems:"center", gap:8, background:"rgba(255,255,255,0.04)", borderRadius:10, padding:"8px 12px", borderLeft:`3px solid ${col[r.urgence]||"#a8c5a0"}` }}>
+          <span style={{ fontSize:16 }}>{r.emoji}</span>
+          <span style={{ color:"#d4e8cc", fontSize:13, flex:1 }}>{r.action}</span>
+          <span style={{ fontSize:10, color:col[r.urgence], textTransform:"uppercase", fontWeight:700 }}>{r.urgence}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── MODULE RÉCOLTE IA ────────────────────────────────────────────────────────
+function HarvestGuide({ plant }) {
+  const [loading, setLoading] = useState(true);
+  const [content, setContent] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true); setContent("");
+    const ctx = [plant.variety&&`variété ${plant.variety}`, plant.plantedDate&&`plantée le ${plant.plantedDate}`, plant.location&&`emplacement ${plant.location}`].filter(Boolean).join(", ");
+    const prompt = `Tu es un expert jardinier. Pour la plante ${plant.name}${plant.latinName?` (${plant.latinName})`:""}${ctx?`, ${ctx}`:""}, explique en français :
+1. 🗓️ Quand récolter : période de l'année, signes de maturité à observer
+2. ✂️ Comment récolter : gestes précis, outils conseillés
+3. 🫘 Graines / Bulbes : comment les récupérer et les conserver (si applicable)
+4. 📦 Conservation après récolte : durée, méthode (cave, frigo, séchage, congélation…)
+5. 💡 Astuce du jardinier
+Sois précis, pratique, 200 mots max.`;
+    (async () => {
+      try {
+        const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:800, messages:[{role:"user",content:prompt}] }) });
+        const data = await res.json();
+        if (!cancelled) { setContent(data.content?.[0]?.text||"Erreur."); setLoading(false); }
+      } catch { if (!cancelled) { setContent("Erreur réseau."); setLoading(false); } }
+    })();
+    return () => { cancelled = true; };
+  }, [plant.name]);
+
+  if (loading) return (
+    <div style={{ textAlign:"center", padding:32, color:"#a8c5a0" }}>
+      <div style={{ fontSize:28, display:"inline-block", animation:"spin 2s linear infinite" }}>🌱</div>
+      <div style={{ marginTop:10, fontSize:13 }}>Génération du guide récolte…</div>
+      <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+  return <div style={{ color:"#d4e8cc", lineHeight:1.8, fontSize:14, whiteSpace:"pre-wrap" }}>{content}</div>;
+}
+
+// ─── MODAL PLANTE ────────────────────────────────────────────────────────────
+function PlantModal({ initial, onSave, onClose, title }) {
+  const blank = { name:"", emoji:"🌿", type:"potager", watering:2, light:"Plein soleil", npk:"5-5-5", seeds:"", lunar:"🌕 Fruit", latinName:"", variety:"", plantedDate:"", location:"", notes:"" };
+  const [form, setForm] = useState(initial || blank);
+  const set = (k, v) => setForm(f => ({...f, [k]:v}));
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.9)", zIndex:1000, display:"flex", alignItems:"flex-start", justifyContent:"center", padding:"10px 14px 48px", overflowY:"auto" }}>
+      <div style={{ background:"#1a2e1e", border:"1px solid rgba(168,197,160,0.2)", borderRadius:20, padding:22, maxWidth:420, width:"100%", marginTop:6 }}>
+        <h3 style={{ fontFamily:"'Playfair Display',serif", color:"#f0ece0", marginBottom:18, fontSize:17 }}>{title}</h3>
+
+        <div style={{ color:"#ffd700", fontSize:11, textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>🌱 Infos de base</div>
+        <div style={{ display:"flex", gap:10, marginBottom:12 }}>
+          <div style={{ flex:"0 0 66px" }}><label style={lbl}>Emoji</label><input value={form.emoji} onChange={e=>set("emoji",e.target.value)} style={{...inp,textAlign:"center",fontSize:22}} /></div>
+          <div style={{ flex:1 }}><label style={lbl}>Nom *</label><input value={form.name} onChange={e=>set("name",e.target.value)} placeholder="Ex: Tomate" style={inp} /></div>
+        </div>
+
+        <div style={{ color:"#ffd700", fontSize:11, textTransform:"uppercase", letterSpacing:1, marginBottom:10, marginTop:16 }}>🔬 Botanique</div>
+        <div style={{ marginBottom:10 }}><label style={lbl}>Nom latin</label><input value={form.latinName} onChange={e=>set("latinName",e.target.value)} placeholder="Ex: Solanum lycopersicum" style={{...inp, fontStyle:"italic"}} /></div>
+        <div style={{ marginBottom:10 }}><label style={lbl}>Variété</label><input value={form.variety} onChange={e=>set("variety",e.target.value)} placeholder="Ex: Cœur de bœuf, Marmande…" style={inp} /></div>
+
+        <div style={{ color:"#ffd700", fontSize:11, textTransform:"uppercase", letterSpacing:1, marginBottom:10, marginTop:16 }}>📍 Mon jardin</div>
+        <div style={{ marginBottom:10 }}><label style={lbl}>Date de plantation</label><input type="date" value={form.plantedDate} onChange={e=>set("plantedDate",e.target.value)} style={inp} /></div>
+        <div style={{ marginBottom:10 }}><label style={lbl}>Emplacement</label><input value={form.location} onChange={e=>set("location",e.target.value)} placeholder="Ex: Carré n°2, serre, terrasse…" style={inp} /></div>
+        <div style={{ marginBottom:12 }}>
+          <label style={lbl}>Notes personnelles</label>
+          <textarea value={form.notes} onChange={e=>set("notes",e.target.value)} placeholder="Observations, traitements, achats…" rows={3} style={{...inp, resize:"vertical"}} />
+        </div>
+
+        <div style={{ color:"#ffd700", fontSize:11, textTransform:"uppercase", letterSpacing:1, marginBottom:10, marginTop:4 }}>⚙️ Culture</div>
+        <div style={{ display:"flex", gap:10, marginBottom:10 }}>
+          <div style={{ flex:1 }}>
+            <label style={lbl}>Type</label>
+            <select value={form.type} onChange={e=>set("type",e.target.value)} style={{...inp, background:"#1a2e1e"}}>
+              {["potager","aromatique","ornement","intérieur","fruitier","bulbe"].map(t=><option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div style={{ flex:1 }}><label style={lbl}>NPK</label><input value={form.npk} onChange={e=>set("npk",e.target.value)} placeholder="5-10-10" style={inp} /></div>
+        </div>
+        <div style={{ marginBottom:10 }}><label style={lbl}>Lumière</label><input value={form.light} onChange={e=>set("light",e.target.value)} placeholder="Plein soleil, mi-ombre…" style={inp} /></div>
+        <div style={{ marginBottom:16 }}>
+          <label style={lbl}>Arrosage : {"💧".repeat(form.watering)}</label>
+          <input type="range" min={1} max={5} value={form.watering} onChange={e=>set("watering",+e.target.value)} style={{ width:"100%", accentColor:"#2D6A4F" }} />
+        </div>
+
+        {!initial && (
+          <>
+            <div style={{ color:"#a8c5a0", fontSize:12, marginBottom:8 }}>Ou partir d'un préréglage :</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:16 }}>
+              {PLANT_PRESETS.map(p => (
+                <button key={p.name} onClick={() => setForm({...p})} style={{ background:"rgba(45,106,79,0.3)", border:"1px solid rgba(168,197,160,0.2)", borderRadius:20, padding:"4px 10px", color:"#d4e8cc", cursor:"pointer", fontSize:12 }}>
+                  {p.emoji} {p.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"11px", background:"rgba(255,255,255,0.08)", border:"none", borderRadius:10, color:"#fff", cursor:"pointer", fontSize:14 }}>Annuler</button>
+          <button onClick={() => { if(form.name.trim()){ onSave(form); onClose(); } }} style={{ flex:1, padding:"11px", background:"#2D6A4F", border:"none", borderRadius:10, color:"#fff", cursor:"pointer", fontSize:14, fontWeight:700 }}>
+            Enregistrer 🌱
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── CARTE PLANTE ─────────────────────────────────────────────────────────────
+function PlantCard({ plant, selected, onView }) {
+  return (
+    <div onClick={() => onView(plant)} style={{ background: selected?"rgba(45,106,79,0.22)":"rgba(255,255,255,0.05)", border:`1px solid ${selected?"rgba(45,106,79,0.55)":"rgba(255,255,255,0.12)"}`, borderRadius:16, padding:14, cursor:"pointer", transition:"all 0.2s" }}>
+      <div style={{ fontSize:32, marginBottom:6 }}>{plant.emoji}</div>
+      <div style={{ fontFamily:"'Playfair Display',serif", fontSize:14, fontWeight:700, color:"#f0ece0", marginBottom:2 }}>{plant.name}</div>
+      {plant.variety && <div style={{ fontSize:11, color:"#6b9a7a", marginBottom:2 }}>{plant.variety}</div>}
+      {plant.latinName && <div style={{ fontSize:10, color:"#6b9a7a", fontStyle:"italic", marginBottom:4 }}>{plant.latinName}</div>}
+      <div style={{ fontSize:10, color:"#a8c5a0", textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>{plant.type}</div>
+      <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+        <span style={{ background:"rgba(45,106,79,0.4)", color:"#a8d8a8", borderRadius:20, padding:"2px 7px", fontSize:10 }}>{"💧".repeat(plant.watering)}</span>
+        {plant.location && <span style={{ background:"rgba(255,255,255,0.07)", color:"#a8c5a0", borderRadius:20, padding:"2px 7px", fontSize:10 }}>📍 {plant.location}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ─────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [activeModule, setActiveModule] = useState(0);
+  const [plants, setPlants] = useState([
+    {...PLANT_PRESETS[0], id:1, variety:"Cœur de bœuf", plantedDate:"2025-04-10", location:"Carré n°1", notes:"Très belle croissance, tuteurer en juin."},
+    {...PLANT_PRESETS[1], id:2, plantedDate:"2025-04-15", location:"Terrasse"},
+    {...PLANT_PRESETS[2], id:3, variety:"Albertine", location:"Mur sud"},
+    {...PLANT_PRESETS[8], id:4, variety:"Gariguette", location:"Carré n°3", plantedDate:"2025-03-20"},
+  ]);
+  const [selectedPlant, setSelectedPlant] = useState(null);
+  const [showAISheet, setShowAISheet] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [editingPlant, setEditingPlant] = useState(null);
+  const [aiTip, setAiTip] = useState("");
+  const [loadingTip, setLoadingTip] = useState(false);
+  const [harvestPlant, setHarvestPlant] = useState(null);
+
+  const season = getCurrentSeason();
+  const seasonEmoji = SEASONS[season]?.emoji;
+  const moonPhase = MOON_PHASES[Math.floor((Date.now()/86400000) % 8)];
+
+  const fetchTip = async () => {
+    setLoadingTip(true);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:300, messages:[{role:"user",content:`Un conseil de jardinage poétique et pratique pour la saison ${season} en France. Max 3 phrases, commence directement.`}] }) });
+      const data = await res.json();
+      setAiTip(data.content?.[0]?.text||"");
+    } catch { setAiTip("Erreur réseau."); }
+    setLoadingTip(false);
+  };
+  useEffect(() => { fetchTip(); }, []);
+
+  const addPlant    = (p) => setPlants(prev => [...prev, {...p, id:Date.now()}]);
+  const updatePlant = (p) => { setPlants(prev => prev.map(x => x.id===p.id ? {...p} : x)); setSelectedPlant({...p}); };
+  const deletePlant = (id) => { setPlants(prev => prev.filter(x => x.id!==id)); setSelectedPlant(null); };
+
+  const navBtn = (active) => ({ padding:"8px 12px", borderRadius:20, border:"none", cursor:"pointer", fontSize:12, fontWeight:active?700:400, whiteSpace:"nowrap", background:active?"#2D6A4F":"rgba(255,255,255,0.06)", color:active?"#fff":"#a8c5a0", transition:"all 0.2s" });
+
+  return (
+    <div style={{ minHeight:"100vh", background:"linear-gradient(160deg,#0a1a0e 0%,#0d1f12 40%,#081510 100%)", fontFamily:"'Lato',sans-serif", color:"#d4e8cc" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Lato:wght@300;400;700&display=swap" rel="stylesheet" />
+
+      {/* ── HEADER ── */}
+      <div style={{ padding:"22px 18px 14px", borderBottom:"1px solid rgba(168,197,160,0.1)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+          <div>
+            <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:23, margin:0, color:"#f0ece0", fontWeight:900 }}>{seasonEmoji} Jardin IA</h1>
+            <div style={{ color:"#a8c5a0", fontSize:12, marginTop:3 }}>{season.charAt(0).toUpperCase()+season.slice(1)} • {moonPhase} • {plants.length} plante{plants.length>1?"s":""}</div>
+          </div>
+        </div>
+        <div style={{ marginTop:14, background:"rgba(45,106,79,0.18)", border:"1px solid rgba(45,106,79,0.35)", borderRadius:12, padding:"10px 14px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:5 }}>
+            <span style={{ fontSize:11, color:"#a8d8a8", textTransform:"uppercase", letterSpacing:1 }}>✨ Conseil IA du jour</span>
+            <button onClick={fetchTip} style={{ background:"none", border:"none", color:"#a8c5a0", cursor:"pointer", fontSize:15 }}>↻</button>
+          </div>
+          {loadingTip ? <div style={{ color:"#a8c5a0", fontSize:13 }}>Génération…</div>
+            : <div style={{ color:"#d4e8cc", fontSize:13, lineHeight:1.6 }}>{aiTip}</div>}
+        </div>
+      </div>
+
+      {/* ── NAV ── */}
+      <div style={{ display:"flex", gap:6, padding:"10px 14px", overflowX:"auto", borderBottom:"1px solid rgba(168,197,160,0.08)" }}>
+        {MODULES.map((m,i) => <button key={m} style={navBtn(activeModule===i)} onClick={() => setActiveModule(i)}>{MODULE_ICONS[i]} {m}</button>)}
+      </div>
+
+      {/* ── CONTENU ── */}
+      <div style={{ padding:18 }}>
+
+        {/* MODULE 0 : MES PLANTES */}
+        {activeModule===0 && (
+          <>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+              <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:"#f0ece0", margin:0 }}>🌱 Mes Plantes</h2>
+              <button onClick={() => setShowAdd(true)} style={{ background:"#2D6A4F", border:"none", borderRadius:20, padding:"7px 16px", color:"#fff", cursor:"pointer", fontSize:13, fontWeight:700 }}>+ Ajouter</button>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(145px,1fr))", gap:10, marginBottom:18 }}>
+              {plants.map(p => <PlantCard key={p.id} plant={p} selected={selectedPlant?.id===p.id} onView={pl => setSelectedPlant(prev => prev?.id===pl.id ? null : pl)} />)}
+            </div>
+
+            {selectedPlant && (
+              <div style={card}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+                  <div>
+                    <span style={{ fontSize:24 }}>{selectedPlant.emoji}</span>
+                    <span style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:"#f0ece0", marginLeft:8 }}>{selectedPlant.name}</span>
+                    {selectedPlant.variety && <div style={{ color:"#6b9a7a", fontSize:12, marginTop:2 }}>Variété : {selectedPlant.variety}</div>}
+                    {selectedPlant.latinName && <div style={{ color:"#6b9a7a", fontSize:11, fontStyle:"italic" }}>{selectedPlant.latinName}</div>}
+                  </div>
+                  <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                    <button onClick={() => setEditingPlant(selectedPlant)} style={{ background:"rgba(255,255,255,0.08)", border:"none", borderRadius:20, padding:"5px 10px", color:"#fff", cursor:"pointer", fontSize:13 }}>✏️</button>
+                    <button onClick={() => setShowAISheet(true)} style={{ background:"#2D6A4F", border:"none", borderRadius:20, padding:"5px 12px", color:"#fff", cursor:"pointer", fontSize:12, fontWeight:700 }}>Fiche IA 📋</button>
+                  </div>
+                </div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
+                  {selectedPlant.plantedDate && <span style={{ background:"rgba(255,200,0,0.12)", color:"#ffd700", borderRadius:20, padding:"3px 10px", fontSize:11 }}>📅 {selectedPlant.plantedDate}</span>}
+                  {selectedPlant.location    && <span style={{ background:"rgba(45,106,79,0.25)", color:"#a8d8a8", borderRadius:20, padding:"3px 10px", fontSize:11 }}>📍 {selectedPlant.location}</span>}
+                  <span style={{ background:"rgba(255,255,255,0.07)", color:"#a8c5a0", borderRadius:20, padding:"3px 10px", fontSize:11 }}>☀️ {selectedPlant.light}</span>
+                </div>
+                {selectedPlant.notes && (
+                  <div style={{ background:"rgba(255,255,255,0.04)", borderRadius:10, padding:"10px 14px", marginBottom:12, borderLeft:"3px solid #a8c5a0" }}>
+                    <div style={{ color:"#a8c5a0", fontSize:11, marginBottom:4 }}>📝 MES NOTES</div>
+                    <div style={{ color:"#d4e8cc", fontSize:13, lineHeight:1.6 }}>{selectedPlant.notes}</div>
+                  </div>
+                )}
+                <div style={{ color:"#a8c5a0", fontSize:11, textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>🔔 Rappels IA – {season}</div>
+                <AIReminders plant={selectedPlant} season={season} />
+                <button onClick={() => deletePlant(selectedPlant.id)} style={{ marginTop:14, background:"rgba(255,80,80,0.1)", border:"1px solid rgba(255,80,80,0.2)", borderRadius:10, padding:"7px 14px", color:"#ff9999", cursor:"pointer", fontSize:12, width:"100%" }}>
+                  🗑️ Supprimer cette plante
+                </button>
+              </div>
+            )}
+            {!selectedPlant && plants.length>0 && (
+              <div style={{...card, textAlign:"center", color:"#a8c5a0", fontSize:14}}>👆 Appuie sur une plante pour la gérer</div>
+            )}
+          </>
+        )}
+
+        {/* MODULE 1 : RÉCOLTE */}
+        {activeModule===1 && (
+          <>
+            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:"#f0ece0", margin:"0 0 14px" }}>🧺 Guide Récolte</h2>
+            <p style={{ color:"#a8c5a0", fontSize:13, marginBottom:16, lineHeight:1.6 }}>Sélectionne une de tes plantes pour obtenir un guide IA personnalisé : quand et comment récolter, récupérer les graines, bulbes ou boutures, et conserver ta récolte.</p>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:10, marginBottom:20 }}>
+              {plants.map(p => (
+                <div key={p.id} onClick={() => setHarvestPlant(prev => prev?.id===p.id ? null : p)}
+                  style={{ background: harvestPlant?.id===p.id ? "rgba(45,106,79,0.25)" : "rgba(255,255,255,0.05)", border:`1px solid ${harvestPlant?.id===p.id?"rgba(45,106,79,0.55)":"rgba(255,255,255,0.1)"}`, borderRadius:16, padding:14, cursor:"pointer", transition:"all 0.2s" }}>
+                  <div style={{ fontSize:30, marginBottom:6 }}>{p.emoji}</div>
+                  <div style={{ fontFamily:"'Playfair Display',serif", fontSize:14, fontWeight:700, color:"#f0ece0" }}>{p.name}</div>
+                  {p.variety && <div style={{ fontSize:11, color:"#6b9a7a" }}>{p.variety}</div>}
+                  <div style={{ fontSize:10, color:"#a8c5a0", textTransform:"uppercase", marginTop:4 }}>{p.type}</div>
+                </div>
+              ))}
+            </div>
+            {harvestPlant && (
+              <div style={card}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+                  <span style={{ fontSize:26 }}>{harvestPlant.emoji}</span>
+                  <div>
+                    <div style={{ fontFamily:"'Playfair Display',serif", color:"#f0ece0", fontSize:17 }}>{harvestPlant.name}</div>
+                    {harvestPlant.variety && <div style={{ color:"#6b9a7a", fontSize:12 }}>{harvestPlant.variety}</div>}
+                    {harvestPlant.latinName && <div style={{ color:"#6b9a7a", fontSize:11, fontStyle:"italic" }}>{harvestPlant.latinName}</div>}
+                  </div>
+                </div>
+                <HarvestGuide plant={harvestPlant} />
+              </div>
+            )}
+            {/* Guide général */}
+            <div style={card}>
+              <div style={{ fontWeight:700, color:"#ffd700", marginBottom:12 }}>📋 Référence rapide par type</div>
+              {[
+                { type:"🍅 Légumes-fruits", tip:"Récolter à maturité colorée, avant les premières gelées. Conserver à température ambiante." },
+                { type:"🥬 Légumes-feuilles", tip:"Couper les feuilles extérieures, laisser le cœur. Récolter le matin, conserver au frais." },
+                { type:"🌸 Fleurs & Boutures", tip:"Cueillir avant pleine floraison pour séchage. Boutures en automne dans du sable humide." },
+                { type:"🫘 Graines & Bulbes", tip:"Attendre la pleine maturité. Sécher 2-4 sem. Bulbes : déterrer après jaunissement du feuillage." },
+                { type:"🍓 Fruits", tip:"Récolter à maturité, sans blessure. Cave (pommes, poires) ou congélation pour les petits fruits." },
+              ].map((r,i) => (
+                <div key={i} style={{ marginBottom:10, paddingBottom:10, borderBottom: i<4 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                  <div style={{ color:"#d4e8cc", fontWeight:700, fontSize:13, marginBottom:3 }}>{r.type}</div>
+                  <div style={{ color:"#a8c5a0", fontSize:12, lineHeight:1.5 }}>{r.tip}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* MODULE 2 : POTAGER */}
+        {activeModule===2 && (
+          <>
+            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:"#f0ece0", margin:"0 0 14px" }}>🥕 Potager intelligent</h2>
+            <div style={card}>
+              <div style={{ color:"#ffd700", fontWeight:700, marginBottom:10 }}>📅 Plantes potager — {season}</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                {PLANT_PRESETS.filter(p=>p.type==="potager").map(p => (
+                  <div key={p.name} style={{ background:"rgba(45,106,79,0.2)", borderRadius:10, padding:"8px 12px", border:"1px solid rgba(45,106,79,0.3)" }}>
+                    <div style={{ fontSize:20 }}>{p.emoji}</div>
+                    <div style={{ fontSize:13, color:"#d4e8cc", fontWeight:700 }}>{p.name}</div>
+                    <div style={{ fontSize:10, color:"#6b9a7a", fontStyle:"italic" }}>{p.latinName}</div>
+                    <div style={{ fontSize:11, color:"#a8c5a0" }}>NPK : {p.npk}</div>
+                    <div style={{ fontSize:11, color:"#ffd700" }}>🫘 {p.seeds}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={card}>
+              <div style={{ fontWeight:700, color:"#f0ece0", marginBottom:10 }}>🔄 Rotations conseillées</div>
+              {[{from:"Tomates",to:"Légumineuses",reason:"Fixation azote"},{from:"Choux",to:"Carottes",reason:"Ameublissement du sol"},{from:"Laitues",to:"Courges",reason:"Légumes peu → très exigeants"}].map((r,i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, fontSize:13 }}>
+                  <span style={{ color:"#d4e8cc" }}>{r.from}</span><span style={{ color:"#a8c5a0" }}>→</span>
+                  <span style={{ color:"#a8d8a8", fontWeight:700 }}>{r.to}</span>
+                  <span style={{ color:"#6b9a7a", fontSize:11 }}>({r.reason})</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* MODULE 3 : MALADIES */}
+        {activeModule===3 && (
+          <>
+            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:"#f0ece0", margin:"0 0 14px" }}>🔬 Maladies & Traitements naturels</h2>
+            {Object.entries(NATURAL_TREATMENTS).map(([disease,info]) => (
+              <div key={disease} style={card}>
+                <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, color:"#f0ece0", marginBottom:8 }}>🦠 {disease}</div>
+                <div style={{ fontSize:12, color:"#ff9999", marginBottom:6 }}>⚠️ Cause : {info.cause}</div>
+                <div style={{ fontSize:13, color:"#a8d8a8", marginBottom:4 }}>💊 Traitement : {info.treatment}</div>
+                <div style={{ fontSize:12, color:"#a8c5a0" }}>🛡️ Prévention : {info.prevention}</div>
+              </div>
+            ))}
+          </>
+        )}
+
+        {/* MODULE 4 : NPK */}
+        {activeModule===4 && (
+          <>
+            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:"#f0ece0", margin:"0 0 14px" }}>⚗️ Engrais NPK Intelligent</h2>
+            {NPK_ADVICE.map((n,i) => (
+              <div key={i} style={{...card, borderLeft:`4px solid ${n.color}`}}>
+                <div style={{ fontFamily:"'Playfair Display',serif", fontSize:15, color:"#f0ece0", marginBottom:8 }}>{n.ratio}</div>
+                <div style={{ fontSize:13, color:"#a8c5a0", marginBottom:4 }}>🌱 Plantes : {n.plants}</div>
+                <div style={{ fontSize:13, color:"#a8d8a8" }}>🌿 Sources naturelles : {n.natural}</div>
+              </div>
+            ))}
+            <div style={card}>
+              <div style={{ fontWeight:700, color:"#f0ece0", marginBottom:12 }}>📊 Mes plantes & leurs besoins</div>
+              {plants.map(p => (
+                <div key={p.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, padding:"5px 0", borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+                  <div><span style={{ fontSize:14 }}>{p.emoji} {p.name}</span>{p.variety&&<span style={{ color:"#6b9a7a", fontSize:11, marginLeft:6 }}>({p.variety})</span>}</div>
+                  <span style={{ background:"rgba(45,106,79,0.3)", borderRadius:10, padding:"2px 8px", fontSize:12, color:"#a8d8a8" }}>NPK {p.npk}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* MODULE 5 : GRAINES */}
+        {activeModule===5 && (
+          <>
+            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:"#f0ece0", margin:"0 0 14px" }}>🫘 Récupération de Graines</h2>
+            {plants.map(p => (
+              <div key={p.id} style={card}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div>
+                    <span style={{ fontSize:18 }}>{p.emoji}</span>
+                    <span style={{ fontFamily:"'Playfair Display',serif", color:"#f0ece0", marginLeft:8, fontSize:15 }}>{p.name}</span>
+                    {p.variety && <div style={{ color:"#6b9a7a", fontSize:11, marginTop:2 }}>{p.variety}</div>}
+                  </div>
+                  <span style={{ background:"rgba(255,200,0,0.12)", color:"#ffd700", borderRadius:20, padding:"3px 10px", fontSize:11, fontWeight:700 }}>🗓️ {p.seeds||"Voir variété"}</span>
+                </div>
+                <div style={{ marginTop:8, fontSize:12, color:"#a8c5a0" }}>Récolte optimale → séchage 2-4 sem. → conservation papier kraft, lieu frais & sec</div>
+              </div>
+            ))}
+            <div style={{...card, marginTop:4}}>
+              <div style={{ fontWeight:700, color:"#ffd700", marginBottom:8 }}>💡 Règles d'or</div>
+              {["Choisir les plus beaux sujets","Attendre maturité complète","Sécher avant de stocker","Éviter le plastique hermétique","Étiqueter : nom + variété + date"].map((r,i) => (
+                <div key={i} style={{ color:"#d4e8cc", fontSize:13, marginBottom:4 }}>✓ {r}</div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* MODULE 6 : LUNAIRE */}
+        {activeModule===6 && (
+          <>
+            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:"#f0ece0", margin:"0 0 14px" }}>🌕 Calendrier Lunaire</h2>
+            <div style={{...card, textAlign:"center", marginBottom:14}}>
+              <div style={{ fontSize:42, marginBottom:8 }}>{moonPhase.split(" ")[0]}</div>
+              <div style={{ fontFamily:"'Playfair Display',serif", color:"#f0ece0", fontSize:17 }}>{moonPhase.split(" ").slice(1).join(" ")}</div>
+              <div style={{ color:"#a8c5a0", fontSize:12, marginTop:6 }}>Phase lunaire approximative du jour</div>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
+              {LUNAR_GUIDE.map(l => (
+                <div key={l.day} style={{...card, borderTop:`3px solid ${l.color}`, padding:14, marginBottom:0}}>
+                  <div style={{ fontSize:22, marginBottom:4 }}>{l.icon}</div>
+                  <div style={{ fontWeight:700, color:"#f0ece0", marginBottom:4 }}>Jour {l.day}</div>
+                  <div style={{ fontSize:11, color:"#a8c5a0", lineHeight:1.5 }}>{l.desc}</div>
+                </div>
+              ))}
+            </div>
+            <div style={card}>
+              <div style={{ fontWeight:700, color:"#f0ece0", marginBottom:12 }}>🌱 Mes plantes & le lunaire</div>
+              {plants.map(p => (
+                <div key={p.id} style={{ display:"flex", justifyContent:"space-between", marginBottom:8, fontSize:13 }}>
+                  <span>{p.emoji} {p.name}{p.variety?<span style={{ color:"#6b9a7a", fontSize:11 }}> ({p.variety})</span>:""}</span>
+                  <span style={{ color:"#ffd700" }}>{p.lunar||"🌕 Fruit"}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── MODALS ── */}
+      {showAISheet && selectedPlant && <AISheet plant={selectedPlant} season={season} onClose={() => setShowAISheet(false)} />}
+      {showAdd     && <PlantModal title="➕ Nouvelle plante"    onSave={addPlant}                         onClose={() => setShowAdd(false)} />}
+      {editingPlant && <PlantModal title="✏️ Modifier la plante" initial={editingPlant} onSave={p => updatePlant({...p, id:editingPlant.id})} onClose={() => setEditingPlant(null)} />}
+    </div>
+  );
+}
